@@ -1,4 +1,4 @@
-# ChatBot com Django + LangChain + Groq
+# ChatBot
 
 ---
 
