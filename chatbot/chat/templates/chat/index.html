@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>IFCBot</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background: #0b0f14; color: #e5e7eb; }
+    .card { background: #111827; border-color: #243244; }
+    .chat-box { height: 60vh; overflow-y: auto; background:#0b1220; border:1px solid #243244; border-radius:12px; padding:14px; }
+    .bubble { max-width: 80%; padding:10px 12px; border-radius:14px; border:1px solid #243244; white-space: pre-wrap; }
+    .me { background:#1f2937; margin-left:auto; }
+    .bot { background:#0f172a; margin-right:auto; }
+    textarea { resize:none; }
+  </style>
+</head>
+<body class="py-4">
+<div class="container">
+  <div class="row g-3">
+    <div class="col-12">
+      <div class="card p-3">
+        <div class="d-flex gap-2 flex-wrap align-items-end">
+          <div class="flex-grow-1">
+            <label class="form-label">URL do site (fonte de informação)</label>
+            <input id="siteUrl" class="form-control" placeholder="https://exemplo.com/artigo" />
+          </div>
+          <button id="btnSetSource" class="btn btn-primary">Usar este site</button>
+          <button id="btnClear" class="btn btn-outline-light">Limpar histórico</button>
+        </div>
+        <div class="mt-2 small text-secondary" id="sourceStatus">Nenhuma fonte definida.</div>
+      </div>
+    </div>
+
+    <div class="col-12">
+      <div class="chat-box" id="chat"></div>
+      <div class="mt-2" id="status" class="small text-secondary"></div>
+    </div>
+
+    <div class="col-12">
+      <div class="card p-3">
+        <label class="form-label">Pergunta</label>
+        <div class="d-flex gap-2">
+          <textarea id="msg" class="form-control" rows="2" placeholder="Digite sua pergunta..."></textarea>
+          <button id="btnSend" class="btn btn-success">Enviar</button>
+        </div>
+        <div class="small text-secondary mt-2">Enter envia • Shift+Enter quebra linha</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const chatEl = document.getElementById("chat");
+  const msgEl = document.getElementById("msg");
+  const urlEl = document.getElementById("siteUrl");
+  const btnSend = document.getElementById("btnSend");
+  const btnSetSource = document.getElementById("btnSetSource");
+  const btnClear = document.getElementById("btnClear");
+  const statusEl = document.getElementById("status");
+  const sourceStatus = document.getElementById("sourceStatus");
+
+  function addBubble(role, text) {
+    const div = document.createElement("div");
+    div.className = "bubble mb-2 " + (role === "user" ? "me" : "bot");
+    div.textContent = text;
+    chatEl.appendChild(div);
+    chatEl.scrollTop = chatEl.scrollHeight;
+  }
+
+  function renderHistory(history) {
+    chatEl.innerHTML = "";
+    (history || []).forEach(item => addBubble(item.role, item.text));
+  }
+
+  async function setSource() {
+    const url = urlEl.value.trim();
+    if (!url) return;
+
+    statusEl.textContent = "Carregando site e preparando fonte...";
+    btnSetSource.disabled = true;
+
+    try {
+      const res = await fetch("/api/source/", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ url })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao definir fonte");
+
+      sourceStatus.textContent = "Fonte ativa: " + data.url;
+      renderHistory([]);
+      statusEl.textContent = "";
+
+    } catch (e) {
+      statusEl.textContent = "Erro: " + e.message;
+    } finally {
+      btnSetSource.disabled = false;
+      msgEl.focus();
+    }
+  }
+
+  async function send() {
+    const text = msgEl.value.trim();
+    if (!text) return;
+
+    addBubble("user", text);
+    msgEl.value = "";
+    btnSend.disabled = true;
+    statusEl.textContent = "IFCBot está respondendo...";
+
+    try {
+      const res = await fetch("/api/chat/", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ message: text })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro no chat");
+
+      addBubble("bot", data.reply);
+      if (data.url) sourceStatus.textContent = "Fonte ativa: " + data.url;
+      statusEl.textContent = "";
+
+    } catch (e) {
+      statusEl.textContent = "Erro: " + e.message;
+    } finally {
+      btnSend.disabled = false;
+      msgEl.focus();
+    }
+  }
+
+  async function clearHistory() {
+    await fetch("/api/clear/", { method: "POST" });
+    renderHistory([]);
+    statusEl.textContent = "";
+  }
+
+  btnSetSource.addEventListener("click", setSource);
+  btnSend.addEventListener("click", send);
+  btnClear.addEventListener("click", clearHistory);
+
+  msgEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      send();
+    }
+  });
+</script>
+</body>
+</html>
